@@ -294,30 +294,3 @@ Outputs:
   CodeCommitRepositoryCloneUrlHttp:
     Value: !GetAtt CodeCommitRepository.CloneUrlHttp
     Description: CodeCommit Repository Clone URL (HTTP)
-  CodeCommitRepositoryCloneUrlSsh:
-    Value: !GetAtt CodeCommitRepository.CloneUrlSsh
-    Description: CodeCommit Repository Clone URL (SSH)
-  CodePipelineName:
-    Value: !Ref CodePipeline
-    Description: CodePipeline Name
-  CodePipelineRoleArn:
-    Value: !GetAtt CodePipelineRole.Arn
-    Description: CodePipeline Role ARN
-  CodePipelineS3BucketName:
-    Value: !Ref CodePipelineS3Bucket
-    Description: CodePipeline S3 Bucket Name
-  CodeBuildProjectName:
-    Value: !Ref CodeBuildProject
-    Description: CodeBuild Project Name
-  CodeBuildRoleArn:
-    Value: !GetAtt CodeBuildRole.Arn
-    Description: CodeBuild Role ARN
-  CodeDeployApplicationName:
-    Value: !Ref CodeDeployApplication
-    Description: CodeDeploy Application Name
-  CodeDeployDeploymentGroupName:
-    Value: !Ref CodeDeployDeploymentGroup
-    Description: CodeDeploy Deployment Group Name
-  CodeDeployRoleArn:
-    Value: !GetAtt CodeDeployRole.Arn
-    Description: CodeDeploy Role ARN

@@ -1,0 +1,24 @@
+{
+    "executionRoleArn": "arn:aws:iam::582506663083:role/vikunja-ecs-role",
+    "containerDefinitions": [
+        {
+            "name": "vikunja-api-server",
+            "image": "vikunja/api:latest",
+            "essential": true,
+            "portMappings": [
+                {
+                    "hostPort": 80,
+                    "protocol": "tcp",
+                    "containerPort": 80
+                }
+            ]
+        }
+    ],
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "networkMode": "awsvpc",
+    "cpu": "256",
+    "memory": "512",
+    "family": "vikunja"
+}

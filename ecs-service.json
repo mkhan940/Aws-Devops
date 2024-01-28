@@ -1,0 +1,29 @@
+{
+    "taskDefinition": "vikunja",
+    "cluster": "vikunja-api-server",
+    "loadBalancers": [
+        {
+            "targetGroupArn": "arn:aws:elasticloadbalancing:us-west-2:582506663083:targetgroup/TGBlue/41b1c9ed2ace520c",
+            "containerName": "vikunja-api-server",
+            "containerPort": 80
+        }
+    ],
+    "desiredCount": 1,
+    "launchType": "FARGATE",
+    "schedulingStrategy": "REPLICA",
+    "deploymentController": {
+        "type": "CODE_DEPLOY"
+    },
+    "networkConfiguration": {
+        "awsvpcConfiguration": {
+            "subnets": [
+                "subnet-0fc5e0609b966fb85",
+                "subnet-0db69a66f15ad7ac8"
+            ],
+            "securityGroups": [
+                "sg-07de30ccbc9d37c83"
+            ],
+            "assignPublicIp": "ENABLED"
+        }
+    }
+}

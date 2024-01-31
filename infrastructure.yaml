@@ -11,17 +11,21 @@ Parameters:
     Type: String
     Default: 10.0.1.0/24
     Description: CIDR block for public subnet
-  PrivateSubnetCIDR:
+  PrivateSubnetCIDR1:
     Type: String
     Default: 10.0.2.0/24
     Description: CIDR block for private subnet
+  PrivateSubnetCIDR2:
+    Type: String
+    Default: 10.0.3.0/24
+    Description: CIDR block for private subnet
   DatabaseName:
     Type: String
-    Default: vikunjaDB
+    Default: vikunjadb
     Description: Name of the RDS database
   DatabaseUsername:
     Type: String
-    Default: vikunjaUser
+    Default: vikunjauser
     Description: Username for the RDS database
   DatabasePassword:
     Type: String
@@ -29,27 +33,23 @@ Parameters:
     Description: Password for the RDS database
   ECRRepoName:
     Type: String
-    Default: Api-server
+    Default: apiserver
     Description: Repo Name 
   CodeCommitRepo1Name:
     Type: String
-    Default: Api-server
-    Description: Backend Code Repo Name
+    Default: s3frontend
+    Description: Frontend Code Repo Name
   CodeCommitRepo2Name:
     Type: String
-    Default: Frontend
-    Description: Frontend Code Repo Name
+    Default: ecsbackend
+    Description: Backend Code Repo Name
   ECSClusterName:
     Type: String
-    Default: Api-server
+    Default: vikunja-cluster
     Description: ECS Cluster Name
-  CodeDeployRoleName:
+  FrontendBucketName:
     Type: String
-    Default: CodeDeployRole
-    Description: Code deploy role name
-  FrontendS3Bucket:
-    Type: String
-    Default: vikunja-Frontend
+    Default: s3frontend
     Description: Bucket Name to host frontend
   AZ1:
     Type: String
@@ -61,47 +61,47 @@ Parameters:
     Description: Availability Zone for subnet 2
   RDSDBName:
     Type: String
-    Default: Vikunja-DB
+    Default: vikunjadb
     Description: Vikunja RDS Name
   ALBName:
     Type: String
-    Default: Vikunja-ALB
+    Default: ecs-alb
     Description: Vikunja ALB Name
-  CodePipeline1:
+  FrontendPipeline:
     Type: String
-    Default: Vikunja-Frontend
+    Default: s3frontend
     Description: CodePipeline Frontend Name
-  CodePipeline2:
+  ApiPipeline:
     Type: String
-    Default: Vikunja-Backend-ECS
+    Default: vikunja-backend-ecs
     Description: CodePipeline Backend Name ECS Blue Green
   IndexDocument:
     Type: String
     Default: "index.html"
     Description: S3 Bucket Website Index Document
-  CodePipelineS3Bucket:
+  ArtifactPipelineBucket:
     Type: String
-    Default: CodePipelineS3Bucket
+    Default: codepipeline-us-west-2-368224439013
     Description: CodePipelineS3Bucket
-  CodePipelineRole2:
+  PipelineRoleName:
     Type: String
-    Default: CodePipelineRole-ECS
+    Default: codepipelinerole-ecs
     Description: CodePipelineRole ECS Name
-  CodeBuildProject:
+  CodeBuildProjectName:
     Type: String
-    Default: Vikunja-BE-CodeBuild
+    Default: vikunja-be-codeduild
     Description: CodeBuild Name
-  CodeDeployApplication:
+  CodeDeployAppName:
     Type: String
-    Default: Vikunja-CodeDeploy
+    Default: vikunja-codedeploy
     Description: CodeDeploy App Name
-  CodeDeployDeploymentGroup:
+  CodeDeploymentGroup:
     Type: String
-    Default: CodeDeploy-Api
+    Default: codedeploy-api
     Description: CodeDeploy DeploymentGroup Name
-  CodeDeployRole:
+  DeployRoleName:
     Type: String
-    Default: Vikunja-CodeDeploy
+    Default: vikunja-codedeploy
     Description: CodeDeploy Role Name
 Resources:
   Vpc:
@@ -117,15 +117,24 @@ Resources:
       CidrBlock: !Ref PublicSubnetCIDR
       VpcId: !Ref Vpc
       MapPublicIpOnLaunch: true
-  PrivateSubnet:
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref AZ1
+      CidrBlock: !Ref PrivateSubnetCIDR1
+      VpcId: !Ref Vpc
+  PrivateSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Ref AZ2
-      CidrBlock: !Ref PrivateSubnetCIDR
+      CidrBlock: !Ref PrivateSubnetCIDR2
       VpcId: !Ref Vpc
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
+      Tags:
+        - Key: Name
+          Value: Internetgateway
   AttachGateway:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
@@ -144,31 +153,21 @@ Resources:
     Properties:
       AllocatedStorage: 20
       DBInstanceIdentifier: !Ref RDSDBName
-      Engine: postgres
+      Engine: MySQL
+      EngineVersion: "8.0.33"
       MasterUsername: !Ref DatabaseUsername
       MasterUserPassword: !Ref DatabasePassword
       DBInstanceClass: db.t2.micro
-      VPCSecurityGroups:
-        - !GetAtt DatabaseSecurityGroup.GroupId
       Tags:
         - Key: Name
           Value: !Ref RDSDBName
-  DatabaseSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Allow database access
-      VpcId: !Ref Vpc
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 5432
-          ToPort: 5432
-          CidrIp: !Ref PrivateSubnetCIDR
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Name: !Ref ALBName
       Subnets:
-        - !Ref PublicSubnet
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
       SecurityGroups:
         - !GetAtt LoadBalancerSecurityGroup.GroupId
       Scheme: internet-facing
@@ -192,7 +191,7 @@ Resources:
   TGBlue:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: "TGBlue"
+      Name: "TargetGroupBlue"
       Port: 80
       Protocol: HTTP
       VpcId: !Ref Vpc
@@ -213,7 +212,6 @@ Resources:
           FixedResponseConfig:
             StatusCode: 200
             ContentType: text/plain
-            Content: "OK"
       LoadBalancerArn: !Ref LoadBalancer
       Port: 80
       Protocol: HTTP
@@ -229,33 +227,33 @@ Resources:
             - "/"
       ListenerArn: !Ref ALBListener
       Priority: 1
-
-    - Type: AWS::ElasticLoadBalancingV2::ListenerRule
-      Properties:
-        Actions:
-          - Type: forward
-            TargetGroupArn: !Ref TGGreen
-        Conditions:
-          - Field: path-pattern
-            Values:
-              - "/green/*"
-        ListenerArn: !Ref ALBListener
-        Priority: 2
-
-    - Type: AWS::ElasticLoadBalancingV2::ListenerRule
-      Properties:
-        Actions:
-            - Type: redirect
-            RedirectConfig:
-              StatusCode: HTTP_301
-              Protocol: HTTPS
-              Port: "443"  
-          Conditions:
-          - Field: path-pattern
-            Values:
-              - "/frontend/*"
-        ListenerArn: !Ref ALBListener
-        Priority: 3
+  ALBListenerRules:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TGGreen
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - "/green/*"
+      ListenerArn: !Ref ALBListener
+      Priority: 2
+  ALBListenerRules:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: redirect
+          RedirectConfig:
+            StatusCode: HTTP_301
+            Protocol: HTTPS
+            Port: "443"  
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - "/frontend/*"
+      ListenerArn: !Ref ALBListener
+      Priority: 3
   CodeCommitRepository1:
     Type: AWS::CodeCommit::Repository
     Properties:
@@ -267,10 +265,10 @@ Resources:
   CodePipeline1:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Ref CodePipeline1
+      Name: !Ref FrontendPipeline
       RoleArn: !GetAtt CodePipelineRole1.Arn
       ArtifactStore:
-        Location: !Ref CodePipelineS3Bucket
+        Location: !Ref ArtifactPipelineBucket
         Type: S3
       Stages:
         - Name: Source
@@ -294,21 +292,20 @@ Resources:
                 Owner: AWS
                 Provider: S3
                 Version: 1
+              RunOrder: 1
               Configuration:
-                InputArtifacts:
-                  - Name: SourceOutput
-                OutputArtifacts: []
-                BucketName: !Ref FrontendS3Bucket
+                BucketName: !Ref FrontendBucketName
                 Extract: true
-                ObjectKey: "" 
-                RunOrder: 1
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts: []  
   CodePipeline2:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Ref CodePipeline2
-      RoleArn: !GetAtt CodePipelineRole2.Arn
+      Name: !Ref ApiPipeline
+      RoleArn: !GetAtt ApiPipelineRole.Arn
       ArtifactStore:
-        Location: !Ref CodePipelineS3Bucket
+        Location: !Ref ArtifactPipelineBucket
         Type: S3
       Stages:
         - Name: Source
@@ -333,7 +330,7 @@ Resources:
                 Provider: CodeBuild
                 Version: 1
               Configuration:
-                ProjectName: !Ref CodeBuildProject
+                ProjectName: !Ref CodeBuildProjectName
               InputArtifacts:
                 - Name: SourceOutput
               OutputArtifacts:
@@ -347,9 +344,8 @@ Resources:
                 Provider: CodeDeploy
                 Version: 1
               Configuration:
-                ApplicationName: !Ref CodeDeployApplication
-                DeploymentGroupName: !Ref CodeDeployDeploymentGroup
-                DeploymentConfigName: CodeDeployDefault.OneAtATime
+                ApplicationName: !Ref CodeDeployAppName
+                DeploymentGroupName: !Ref CodeDeploymentGroup
               InputArtifacts:
                 - Name: BuildOutput
   CodePipelineRole1:
@@ -376,12 +372,12 @@ Resources:
                   - "codecommit:Get*"
                   - "codecommit:GitPull"
                 Resource:
-                  - Fn::Sub: "arn:aws:s3:::${FrontendS3Bucket}/*"
-                  - Fn::Sub: "arn:aws:s3:::${FrontendS3Bucket}"
-  CodePipelineRole2:
+                  - Fn::Sub: "arn:aws:s3:::${VikunjaFrontendBucket}/*"
+                  - Fn::Sub: "arn:aws:s3:::${VikunjaFrontendBucket}"
+  ApiPipelineRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Ref CodePipelineRole2
+      RoleName: !Ref PipelineRoleName
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -398,32 +394,17 @@ Resources:
                 Action:
                   - s3:GetObject
                   - s3:PutObject
-                Resource: !Sub arn:aws:s3:::${CodePipelineS3Bucket}/*
-  CodePipelineS3Bucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Ref CodePipelineS3Bucket
-  FrontendS3Bucket:
+                Resource: !Sub arn:aws:s3:::${ArtifactPipelineBucket}/*
+  VikunjaFrontendBucket:
     Type: "AWS::S3::Bucket"
     Properties:
-      BucketName: !Ref FrontendS3Bucket
-      AccessControl: PublicRead
+      BucketName: !Ref FrontendBucketName
       WebsiteConfiguration:
         IndexDocument: !Ref IndexDocument
-  MyBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref FrontendS3Bucket
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Action: s3:GetObject
-            Resource: !Sub "arn:aws:s3:::$FrontendS3Bucket}/*"
   CodeBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: !Ref CodeBuildProject
+      Name: !Ref CodeBuildProjectName
       Source:
         Type: CODEPIPELINE
       Environment:
@@ -431,6 +412,8 @@ Resources:
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/standard:4.0
       ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
   CodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
@@ -451,22 +434,22 @@ Resources:
                 Action:
                   - s3:GetObject
                   - s3:PutObject
-                Resource: !Sub arn:aws:s3:::${CodePipelineS3Bucket}/*
+                Resource: !Sub arn:aws:s3:::${ArtifactPipelineBucket}/*
   CodeDeployApplication:
     Type: AWS::CodeDeploy::Application
     Properties:
-      ApplicationName: !Ref CodeDeployApplication
+      ApplicationName: !Ref CodeDeployAppName
   CodeDeployDeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
     Properties:
-      ApplicationName: !Ref CodeDeployApplication
-      DeploymentGroupName: !Ref CodeDeployDeploymentGroup
+      ApplicationName: !Ref CodeDeployAppName
+      DeploymentGroupName: !Ref CodeDeploymentGroup
       DeploymentConfigName: CodeDeployDefault.OneAtATime
       ServiceRoleArn: !GetAtt CodeDeployRole.Arn
   CodeDeployRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Ref CodeDeployRole
+      RoleName: !Ref DeployRoleName
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -498,8 +481,11 @@ Outputs:
   PublicSubnetId:
     Value: !Ref PublicSubnet
     Description: Public Subnet Id
-  PrivateSubnetId:
-    Value: !Ref PrivateSubnet
+  PrivateSubnetId1:
+    Value: !Ref PrivateSubnet1
+    Description: Private Subnet Id
+  PrivateSubnetId2:
+    Value: !Ref PrivateSubnet2
     Description: Private Subnet Id
   RDSDatabaseEndpoint:
     Value: !GetAtt RDSDatabase.Endpoint.Address
@@ -507,6 +493,9 @@ Outputs:
   LoadBalancerDNSName:
     Value: !GetAtt LoadBalancer.DNSName
     Description: Load Balancer DNS Name
-  CodeCommitRepositoryCloneUrlHttp:
-    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
+  CodeCommitRepository1CloneUrlHttp:
+    Value: !GetAtt CodeCommitRepository1.CloneUrlHttp
+    Description: CodeCommit Repository Clone URL (HTTP)
+  CodeCommitRepository2CloneUrlHttp:
+    Value: !GetAtt CodeCommitRepository2.CloneUrlHttp
     Description: CodeCommit Repository Clone URL (HTTP)
